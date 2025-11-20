@@ -51,7 +51,7 @@
     .content{display:grid;grid-template-columns:1fr 340px;gap:20px;padding:20px}
     @media(max-width:850px){.content{grid-template-columns:1fr;gap:18px;padding:18px}}
 
-    label{display:block;margin:block;margin:10px 0 5px;font-weight:600;font-size:0.95em;color:#222}
+    label{display:block;margin:10px 0 5px;font-weight:600;font-size:0.95em;color:#222}
     input[type=text],select,textarea{width:100%;padding:8px;border:1px solid #ccc;
                                     border-radius:6px;font-size:0.95em;box-sizing:border-box}
     textarea{min-height:78px;resize:vertical}
@@ -101,7 +101,6 @@
     <input type="file" id="buildingPhotoInput" accept="image/*">
     <img id="buildingPhoto" src="" style="display:none">
     <div id="coverPlaceholder">Building / Facility Photo<br><small>Click anywhere to upload</small></div>
-
     <div class="cover-info">
         <div class="project" id="printProjectName">Project Name</div>
         <div>Fire Door Inspection Report</div>
@@ -130,7 +129,6 @@
         <div class="summary-box fail-box"><div id="failCount">0</div><div style="font-size:0.7em;margin-top:8px;font-weight:normal">Doors FAIL</div></div>
     </div>
     <div class="summary-box total-box">Total Doors Inspected: <span id="totalCount">0</span></div>
-
     <div class="common-failures">
         <strong>Most Common NFPA 80 / IBC Fire Door Deficiencies Observed:</strong><br><br>
         • Missing or damaged fire-exit hardware • Holes, breaks, or unauthorized modifications • Damaged, missing, or compressed seals<br>
@@ -181,7 +179,6 @@ document.getElementById('buildingPhotoInput').onchange = async e => {
     img.style.display = 'block';
     document.querySelector('.cover-overlay').style.display = 'none';
     document.getElementById('coverPlaceholder').style.display = 'none';
-    // Force repaint so it appears in print/PDF (iOS Safari bug fix)
     img.onload = () => {
         img.style.opacity = '0.999';
         setTimeout(() => img.style.opacity = '1', 100);
@@ -226,7 +223,7 @@ function createDoor() {
             </div>
         </div>
         <div class="delete-wrapper">
-            <button class="delete-btn" title="Delete this door">x</button>
+            <button class="delete-btn" title="Delete this door">×</button>
         </div>
     `;
 
@@ -256,12 +253,10 @@ function createDoor() {
     App.updateSummary();
 }
 
-// BUTTONS
 document.getElementById('addBtn').onclick = createDoor;
 document.getElementById('printBtn').onclick = () => window.print();
 document.getElementById('exportPdfBtn').onclick = () => window.print();
 
-// SAVE PROJECT
 document.getElementById('saveProject').onclick = async () => {
     const doorsData = await Promise.all(Array.from(document.querySelectorAll('.door-row')).map(async row => {
         const photos = Array.from(row.querySelectorAll('.photo img')).map(img => img.src);
@@ -290,7 +285,6 @@ document.getElementById('saveProject').onclick = async () => {
     a.click();
 };
 
-// LOAD PROJECT
 document.getElementById('loadProjectBtn').onclick = () => document.getElementById('loadFile').click();
 document.getElementById('loadFile').onchange = e => {
     const file = e.target.files[0];
@@ -308,7 +302,6 @@ document.getElementById('loadFile').onchange = e => {
                 img.style.display = 'block';
                 document.querySelector('.cover-overlay').style.display = 'none';
                 document.getElementById('coverPlaceholder').style.display = 'none';
-                // Force repaint for print
                 img.onload?.();
             }
             App.container.innerHTML = '';
@@ -345,7 +338,6 @@ document.getElementById('searchBar').oninput = e => {
     });
 };
 
-// START
 createDoor();
 updateCoverText();
 </script>
