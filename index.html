@@ -168,21 +168,38 @@ function fileToBase64(file) {
     });
 }
 
-// COVER PHOTO — FIXED FOR PRINT/PDF
+// COVER PHOTO — FINAL iOS + PRINT/PDF FIX (2025)
 document.getElementById('coverArea').onclick = () => document.getElementById('buildingPhotoInput').click();
-document.getElementById('buildingPhotoInput').onchange = async e => {
+
+document.getElementById('buildingPhotoInput').onchange = async function(e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Convert to Base64
     const dataUrl = await fileToBase64(file);
+
     const img = document.getElementById('buildingPhoto');
     img.src = dataUrl;
+
+    // Force immediate display
     img.style.display = 'block';
     document.querySelector('.cover-overlay').style.display = 'none';
     document.getElementById('coverPlaceholder').style.display = 'none';
-    img.onload = () => {
-        img.style.opacity = '0.999';
-        setTimeout(() => img.style.opacity = '1', 100);
-    };
+
+    // Triple-force Safari to recognise the image for print/PDF
+    img.decode?.().finally(() => {
+        // 1. trigger layout reflow
+        void img.offsetHeight;
+        // 2. tiny opacity trick
+        img.style.opacity = '0.9999';
+        setTimeout(() => img.style.opacity = '1', 50);
+        // 3. create a tiny clone so print CSS definitely sees it
+        const clone = img.cloneNode();
+        clone.src = dataUrl;
+        clone.style.display = 'none';
+        clone.id = 'print-clone';
+        document.body.appendChild(clone);
+    });
 };
 
 function updateCoverText() {
@@ -343,3 +360,4 @@ updateCoverText();
 </script>
 </body>
 </html>
+
