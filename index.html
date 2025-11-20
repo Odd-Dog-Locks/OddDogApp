@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fire Door Survey Pro – Surveyor Name on Cover</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    :root{--primary:#003087;--accent:#0066cc;--success:#28a745;--danger:#dc3545;--gray:#f8f9fa;--dark:#1a1a1a}
+    body{font-family:'Segoe UI',Arial,sans-serif;margin:0;background:var(--gray);color:#333;line-height:1.4}
+    h1{background:var(--primary);color:white;padding:18px;margin:0;text-align:center;font-size:1.9em;font-weight:600}
+
+    .cover{
+        max-width:1000px;margin:15px auto;background:white;border-radius:12px;overflow:hidden;
+        box-shadow:0 6px 25px rgba(0,0,0,0.15);position:relative;cursor:pointer;
+        text-align:center
+    }
+    .cover img{width:100%;max-height:400px;object-fit:cover}
+    .cover-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.6);color:white;
+                   font-size:1.8em;display:flex;align-items:center;justify-content:center}
+    .cover input{position:absolute;inset:0;opacity:0;cursor:pointer}
+    #coverPlaceholder{padding:100px;background:#e3f2fd;color:#1565c0;font-size:1.6em}
+
+    /* SURVEYOR NAME ON COVER – VISIBLE ONLY IN PRINT/PDF */
+    .cover-info{
+        padding:20px;background:white;color:#333;font-size:1.4em;font-weight:600;
+        display:none; /* hidden on screen */
+    }
+    .cover-info .project{font-size:1.8em;color:var(--primary);margin-bottom:8px}
+    .cover-info .surveyor{font-size:1.3em;color:#555;margin-top:12px}
+
+    .controls{background:white;padding:12px;position:sticky;top:0;z-index:100;
+              box-shadow:0 4px 15px rgba(0,0,0,0.1);display:flex;flex-wrap:wrap;gap:10px;
+              justify-content:center;align-items:center;font-size:14px}
+    button{padding:10px 20px;border:none;border-radius:6px;color:white;font-weight:600;cursor:pointer}
+    #addBtn{background:var(--accent);font-size:16px;padding:12px 28px !important}
+    #saveProject{background:var(--success)}#loadProjectBtn{background:#007bff}
+    #printBtn,#exportPdfBtn{background:#6f42c1}
+    input[type=text]{padding:9px;border:1px solid #ccc;border-radius:6px;min-width:160px}
+
+    .container{max-width:1100px;margin:20px auto;padding:0 10px}
+    .door-row{display:flex;align-items:flex-start;gap:16px;margin-bottom:40px;
+               page-break-inside:avoid;break-inside:avoid}
+    .door{flex:1;background:white;border-radius:12px;overflow:hidden;
+          box-shadow:0 6px 25px rgba(0,0,0,0.12);font-size:14px}
+    .delete-wrapper{display:flex;align-items:center;padding-top:12px}
+    .delete-btn{background:#dc3545;color:white;border:none;border-radius:50%;
+                width:40px;height:40px;font-size:22px;line-height:40px;cursor:pointer;
+                box-shadow:0 4px 12px rgba(220,53,69,0.4);transition:all .2s}
+    .delete-btn:hover{transform:scale(1.15)}
+
+    .door-header{background:var(--dark);color:white;padding:18px 24px;font-size:1.4em;
+                 display:flex;justify-content:space-between;align-items:center;font-weight:600}
+    .status{padding:9px 32px;border-radius:30px;font-weight:bold;cursor:pointer;font-size:1em}
+    .pass{background:var(--success)}.fail{background:var(--danger)}
+
+    .content{display:grid;grid-template-columns:1fr 340px;gap:20px;padding:20px}
+    @media(max-width:850px){.content{grid-template-columns:1fr;gap:18px;padding:18px}}
+
+    label{display:block;margin:10px 0 5px;font-weight:600;font-size:0.95em;color:#222}
+    input[type=text],select,textarea{width:100%;padding:8px;border:1px solid #ccc;
+                                    border-radius:6px;font-size:0.95em;box-sizing:border-box}
+    textarea{min-height:78px;resize:vertical}
+
+    .photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
+    .photo{border:2px dashed #999;height:240px;border-radius:10px;overflow:hidden;position:relative;
+           background:#f9f9f9;display:flex;align-items:center;justify-content:center;
+           text-align:center;color:#666;font-size:0.9em}
+    .photo img{width:100%;height:100%;object-fit:cover}
+    .photo input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+    #summaryPage{background:white;padding:40px 60px;margin:60px auto 20px;
+                 border:4px solid var(--primary);border-radius:16px;max-width:1000px;
+                 box-shadow:0 10px 40px rgba(0,0,0,0.15);page-break-before:always;
+                 font-size:15px;line-height:1.6}
+    #summaryPage h2{color:var(--primary);font-size:2.2em;margin-bottom:20px;text-align:center}
+    .summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin:30px 0}
+    .summary-box{background:#f8f9fa;padding:25px;border-radius:12px;text-align:center;
+                  font-size:1.4em;font-weight:bold;border:3px solid}
+    .pass-box{border-color:var(--success);color:var(--success);background:#d4edda}
+    .fail-box{border-color:var(--danger);color:var(--danger);background:#f8d7da}
+    .total-box{font-size:2em;padding:30px;background:var(--primary);color:white}
+    .common-failures{margin-top:50px;background:#fff8e1;padding:30px;border-left:6px solid #ffc107;
+                     border-radius:8px;font-size:0.98em}
+
+    /* PRINT / PDF STYLING */
+    @media print{
+        body{background:white}
+        .controls,.cover-overlay,#coverPlaceholder,.photo input,.delete-wrapper{display:none !important}
+        .cover-info{display:block !important} /* SHOW SURVEYOR INFO */
+        .door-row{display:block}
+        .cover{border-bottom:5px solid var(--primary);margin:0 0 20px 0;break-after:page}
+        .door{border:2px solid #000;margin:20px 0;break-inside:avoid !important;break-after:page !important}
+        .door-header{background:black !important;color:white !important}
+        .photo{border:2px solid #000;height:250px}
+        .photo img{object-fit:contain;background:white}
+        #summaryPage{break-before:page;margin:40px auto;padding:30px;border:3px solid black}
+        @page{margin:0.5in}
+    }
+</style>
+</head>
+<body>
+
+<h1>Fire Door Survey Report</h1>
+
+<div class="cover" id="coverArea">
+    <div class="cover-overlay">Click to add building photo</div>
+    <input type="file" id="buildingPhotoInput" accept="image/*">
+    <img id="buildingPhoto" src="" style="display:none">
+    <div id="coverPlaceholder">Building / Facility Photo<br><small>Click anywhere to upload</small></div>
+
+    <!-- SURVEYOR NAME & PROJECT – ONLY SHOWS IN PRINT/PDF -->
+    <div class="cover-info">
+        <div class="project" id="printProjectName">Project Name Will Appear Here</div>
+        <div>Fire Door Inspection Report</div>
+        <div class="surveyor">Surveyor: <span id="printSurveyorName">Surveyor Name</span></div>
+    </div>
+</div>
+
+<div class="controls">
+    <input type="text" id="projectName" placeholder="Project Name" value="City Hospital – North Wing">
+    <input type="text" id="surveyor" placeholder="Surveyor">
+    <input type="text" id="searchBar" placeholder="Search doors...">
+    <button id="addBtn">+ Add Door</button>
+    <button id="saveProject">Save Project</button>
+    <button id="loadProjectBtn">Load Project</button>
+    <input type="file" id="loadFile" accept=".json" style="display:none">
+    <button id="printBtn">Print Report</button>
+    <button id="exportPdfBtn">Export to PDF</button>
+</div>
+
+<div class="container" id="container"></div>
+
+<div id="summaryPage">
+    <h2>Inspection Summary</h2>
+    <div class="summary-grid">
+        <div class="summary-box pass-box"><div id="passCount">0</div><div style="font-size:0.7em;margin-top:8px;font-weight:normal">Doors PASS</div></div>
+        <div class="summary-box fail-box"><div id="failCount">0</div><div style="font-size:0.7em;margin-top:8px;font-weight:normal">Doors FAIL</div></div>
+    </div>
+    <div class="summary-box total-box">Total Doors Inspected: <span id="totalCount">0</span></div>
+
+    <div class="common-failures">
+        <strong>Most Common NFPA 80 / IBC Fire Door Deficiencies Observed:</strong><br><br>
+        • Missing or damaged fire-exit hardware (self-closing devices, latches, coordinators)<br>
+        • Holes, breaks, or unauthorized modifications in door or frame<br>
+        • Damaged, missing, or compressed intumescent seals/gasketing<br>
+        • Door not latching positively into frame (3-point latching on pairs)<br>
+        • Undercut exceeds ¾" or blocked by unlisted threshold/seal<br>
+        • Auxiliary hardware applied with screws penetrating the door face<br>
+        • Vision panels with unlisted glass or improper glazing materials<br>
+        • Fusible links or hold-open devices not functioning or improperly installed<br>
+        • Clearance exceeds ⅛" at sides/head or ¾" at bottom (when permitted)<br>
+        • Door warped, twisted, or binding in frame preventing full closure
+    </div>
+</div>
+
+<script>
+const App = {
+    doorNum: 1,
+    container: document.getElementById('container'),
+    updateSummary() {
+        const pass = document.querySelectorAll('.status.pass').length;
+        const fail = document.querySelectorAll('.status.fail').length;
+        document.getElementById('passCount').textContent = pass;
+        document.getElementById('failCount').textContent = fail;
+        document.getElementById('totalCount').textContent = pass + fail;
+    },
+    renumberDoors() {
+        document.querySelectorAll('.door-row').forEach((row, i) => {
+            const num = i + 1;
+            const headerText = row.querySelector('.door-header span');
+            if (headerText) headerText.firstChild.textContent = `Door #${num}: `;
+        });
+        App.doorNum = document.querySelectorAll('.door-row').length + 1;
+        App.updateSummary();
+    }
+};
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// Update cover text in real-time
+function updateCoverText() {
+    document.getElementById('printProjectName').textContent = document.getElementById('projectName').value || 'Fire Door Inspection Report';
+    document.getElementById('printSurveyorName').textContent = document.getElementById('surveyor').value || 'Surveyor Not Specified';
+}
+document.getElementById('projectName').oninput = updateCoverText;
+document.getElementById('surveyor').oninput = updateCoverText;
+
+// Cover Photo
+document.getElementById('coverArea').onclick = () => document.getElementById('buildingPhotoInput').click();
+document.getElementById('buildingPhotoInput').onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const dataUrl = await fileToBase64(file);
+    const img = document.getElementById('buildingPhoto');
+    img.src = dataUrl;
+    img.style.display = 'block';
+    document.querySelector('.cover-overlay').style.display = 'none';
+    document.getElementById('coverPlaceholder').style.display = 'none';
+};
+
+function createDoor() {
+    const row = document.createElement('div');
+    row.className = 'door-row';
+    row.innerHTML = `
+        <div class="door">
+            <div class="door-header">
+                <span>Door #${App.doorNum}: <span class="title">New Door</span></span>
+                <div class="status fail" onclick="this.classList.toggle('pass');this.classList.toggle('fail');
+                     this.textContent=this.classList.contains('pass')?'PASS':'FAIL';App.updateSummary();">FAIL</div>
+            </div>
+            <div class="content">
+                <div>
+                    <label>Door ID / Number</label><input type="text" class="doorId" placeholder="e.g. 201">
+                    <label>Location</label><input type="text" class="location" placeholder="e.g. 2nd Floor Corridor">
+                    <label>Door Type</label>
+                    <select><option>Hollow Metal</option><option>Wood</option><option>Glass/Aluminum</option><option>Fire-Rated</option><option>Other</option></select>
+                    <label>Fire Rating</label>
+                    <select><option>None</option><option>20 min</option><option>45 min</option><option>60 min</option><option>90 min</option><option>3 Hour</option></select>
+                    <label>Issues Found</label><textarea placeholder="e.g. Missing closer, damaged seal"></textarea>
+                    <label>Recommended Action</label><textarea placeholder="e.g. Replace closer, adjust strike"></textarea>
+                </div>
+                <div>
+                    <label>Photos</label>
+                    <div class="photo-grid">
+                        <div class="photo"><span>Outside<br><small>Click to add</small></span><input type="file" accept="image/*"></div>
+                        <div class="photo"><span>Hardware<br><small>Click to add</small></span><input type="file" accept="image/*"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="delete-wrapper">
+            <button class="delete-btn" title="Delete this door">×</button>
+        </div>
+    `;
+
+    row.querySelector('.doorId').oninput = e => {
+        row.querySelector('.title').textContent = e.target.value || 'New Door';
+    };
+
+    row.querySelectorAll('.photo input').forEach(input => {
+        input.onchange = async function () {
+            const file = this.files[0];
+            if (!file) return;
+            const dataUrl = await fileToBase64(file);
+            this.parentElement.innerHTML = `<img src="${dataUrl}">`;
+        };
+    });
+
+    row.querySelector('.delete-btn').onclick = e => {
+        e.stopPropagation();
+        if (confirm('Delete this door permanently?')) {
+            row.remove();
+            App.renumberDoors();
+        }
+    };
+
+    App.container.appendChild(row);
+    App.doorNum++;
+    App.updateSummary();
+}
+
+// BUTTONS
+document.getElementById('addBtn').onclick = createDoor;
+document.getElementById('printBtn').onclick = () => window.print();
+document.getElementById('exportPdfBtn').onclick = () => window.print();
+
+// SAVE / LOAD (unchanged – photos work perfectly)
+document.getElementById('saveProject').onclick = async () => {
+    const doorsData = await Promise.all(Array.from(document.querySelectorAll('.door-row')).map(async row => {
+        const photos = Array.from(row.querySelectorAll('.photo img')).map(img => img.src);
+        return {
+            id: row.querySelector('.doorId').value,
+            location: row.querySelector('.location').value,
+            type: row.querySelectorAll('select')[0].value,
+            rating: row.querySelectorAll('select')[1].value,
+            issues: row.querySelectorAll('textarea')[0].value,
+            action: row.querySelectorAll('textarea')[1].value,
+            photos: photos,
+            status: row.querySelector('.status').textContent
+        };
+    }));
+
+    const data = {
+        projectName: document.getElementById('projectName').value,
+        surveyor: document.getElementById('surveyor').value,
+        buildingPhoto: document.getElementById('buildingPhoto').src || null,
+        doors: doorsData
+    };
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}));
+    a.download = (data.projectName || 'FireDoorSurvey') + '.json';
+    a.click();
+};
+
+document.getElementById('loadProjectBtn').onclick = () => document.getElementById('loadFile').click();
+document.getElementById('loadFile').onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        try {
+            const data = JSON.parse(ev.target.result);
+            document.getElementById('projectName').value = data.projectName || '';
+            document.getElementById('surveyor').value = data.surveyor || '';
+            updateCoverText(); // Update printed cover
+            if (data.buildingPhoto) {
+                document.getElementById('buildingPhoto').src = data.buildingPhoto;
+                document.getElementById('buildingPhoto').style.display = 'block';
+                document.querySelector('.cover-overlay').style.display = 'none';
+                document.getElementById('coverPlaceholder').style.display = 'none';
+            }
+            App.container.innerHTML = '';
+            App.doorNum = 1;
+            data.doors.forEach(d => {
+                createDoor();
+                const row = App.container.lastElementChild;
+                row.querySelector('.doorId').value = d.id || '';
+                row.querySelector('.location').value = d.location || '';
+                row.querySelectorAll('select')[0].value = d.type || 'Hollow Metal';
+                row.querySelectorAll('select')[1].value = d.rating || 'None';
+                row.querySelectorAll('textarea')[0].value = d.issues || '';
+                row.querySelectorAll('textarea')[1].value = d.action || '';
+                row.querySelector('.title').textContent = d.id || 'New Door';
+                const statusEl = row.querySelector('.status');
+                if (d.status === 'PASS') {
+                    statusEl.classList.add('pass'); statusEl.classList.remove('fail'); statusEl.textContent = 'PASS';
+                }
+                d.photos.forEach((src, i) => {
+                    if (src) row.querySelectorAll('.photo')[i].innerHTML = `<img src="${src}">`;
+                });
+            });
+            App.updateSummary();
+            alert('Project loaded successfully!');
+        } catch { alert('Invalid file'); }
+    };
+    reader.readAsText(file);
+};
+
+document.getElementById('searchBar').oninput = e => {
+    const term = e.target.value.toLowerCase();
+    document.querySelectorAll('.door-row').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+    });
+};
+
+// Initialize
+createDoor();
+updateCoverText();
+</script>
+</body>
+</html>
