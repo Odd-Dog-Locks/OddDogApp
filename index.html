@@ -47,6 +47,12 @@
     #printBtn,#exportPdfBtn{background:#6f42c1}
     input[type=text]{padding:9px;border:1px solid #ccc;border-radius:6px;min-width:160px}
 
+    /* Auto-save indicator */
+    #autosaveIndicator{font-size:12px;color:#888;padding:4px 10px;background:#f0f0f0;
+                       border-radius:12px;transition:color 0.3s}
+    #autosaveIndicator.saved{color:var(--success)}
+    #autosaveIndicator.saving{color:#f0ad4e}
+
     .container{max-width:1100px;margin:20px auto;padding:0 10px}
     .door-row{display:flex;align-items:flex-start;gap:16px;margin-bottom:40px;
                page-break-inside:avoid;break-inside:avoid}
@@ -72,11 +78,14 @@
     textarea{min-height:78px;resize:vertical}
 
     .photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
+    /* FIX: photo cell uses position:relative so the hidden file input stays in place */
     .photo{border:2px dashed #999;height:240px;border-radius:10px;overflow:hidden;position:relative;
            background:#f9f9f9;display:flex;align-items:center;justify-content:center;
-           text-align:center;color:#666;font-size:0.9em}
-    .photo img{width:100%;height:100%;object-fit:cover}
-    .photo input{position:absolute;inset:0;opacity:0;cursor:pointer}
+           text-align:center;color:#666;font-size:0.9em;cursor:pointer}
+    .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+    /* FIX: keep the file input always present and covering the cell */
+    .photo input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;z-index:2}
+    .photo .photo-label{pointer-events:none;z-index:1}
 
     #summaryPage{background:white;padding:40px 60px;margin:60px auto 20px;
                  border:4px solid var(--primary);border-radius:16px;max-width:1000px;
@@ -94,7 +103,7 @@
 
     @media print{
         body{background:white;margin:0;padding:0}
-        .controls,.cover-overlay,#coverPlaceholder,.photo input,.delete-wrapper{display:none !important}
+        .controls,.cover-overlay,#coverPlaceholder,.photo input,.delete-wrapper,#autosaveIndicator{display:none !important}
         .cover-info,#licensurePage{display:block !important}
         .door-row{display:block;page-break-before:always;margin:0}
         .door{border:2px solid #000;margin:0;break-inside:avoid !important;page-break-inside:avoid !important;max-height:none}
@@ -126,7 +135,7 @@
 
 <!-- Licensure Page (page 2 in print) -->
 <div id="licensurePage">
-    <h2>Inspector Qualifications & Licensure</h2>
+    <h2>Inspector Qualifications &amp; Licensure</h2>
     <ul>
         <li>Licensed Locksmith - NY CWP: 2039598-DCA</li>
         <li>Certified professional Locksmith (CPL) - Penn Foster College</li>
@@ -149,6 +158,7 @@
     <input type="file" id="loadFile" accept=".json" style="display:none">
     <button id="printBtn">Print Report</button>
     <button id="exportPdfBtn">Export to PDF</button>
+    <span id="autosaveIndicator">Draft saved</span>
 </div>
 
 <div class="container" id="container"></div>
@@ -169,62 +179,50 @@
 </div>
 
 <script>
-// COVER PHOTO HANDLING – iOS FIX USING CANVAS COMPRESSION
+// ─── COVER PHOTO: canvas compression (kept as-is, reused for door photos too) ───
 async function compressAndRenderCover(file, quality = 0.5, maxWidth = 800) {
     const img = new Image();
     img.src = URL.createObjectURL(file);
     await new Promise(r => img.onload = r);
-
-    let width = img.width;
-    let height = img.height;
-    if (width > maxWidth) {
-        height = Math.round(height * (maxWidth / width));
-        width = maxWidth;
-    }
-
+    let width = img.width, height = img.height;
+    if (width > maxWidth) { height = Math.round(height * (maxWidth / width)); width = maxWidth; }
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
-
+    canvas.width = width; canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
     return canvas.toDataURL('image/jpeg', quality);
 }
 
+// ─── COVER PHOTO CLICK ───
 document.getElementById('coverArea').onclick = () => document.getElementById('buildingPhotoInput').click();
 
 document.getElementById('buildingPhotoInput').onchange = async e => {
     const file = e.target.files[0];
     if (!file) return;
-
     const dataUrl = await compressAndRenderCover(file);
-
     const img = document.getElementById('buildingPhoto');
     img.src = dataUrl;
     img.style.display = 'block';
     document.querySelector('.cover-overlay').style.display = 'none';
     document.getElementById('coverPlaceholder').style.display = 'none';
-
-    // Force iOS to render
     void img.offsetHeight;
     img.style.opacity = '0.999';
     setTimeout(() => img.style.opacity = '1', 100);
-
-    // Save to IndexedDB
+    // Save cover photo to IndexedDB
     const open = indexedDB.open('CoverDB', 1);
     open.onsuccess = ev => {
         ev.target.result.transaction('photos', 'readwrite').objectStore('photos').put(dataUrl, 'cover');
     };
+    coverPhotoDataUrl = dataUrl;
+    schedulAutoSave();
 };
 
-// IndexedDB load on start
+// ─── IndexedDB: load cover photo on start ───
 let coverPhotoDataUrl = null;
 const dbOpen = indexedDB.open('CoverDB', 1);
 dbOpen.onupgradeneeded = e => e.target.result.createObjectStore('photos');
 dbOpen.onsuccess = e => {
     const db = e.target.result;
-    const tx = db.transaction('photos', 'readonly');
-    const req = tx.objectStore('photos').get('cover');
+    const req = db.transaction('photos', 'readonly').objectStore('photos').get('cover');
     req.onsuccess = () => {
         if (req.result) {
             coverPhotoDataUrl = req.result;
@@ -237,7 +235,7 @@ dbOpen.onsuccess = e => {
     };
 };
 
-// Print/PDF injection
+// ─── Print/PDF injection ───
 window.onbeforeprint = () => {
     if (!coverPhotoDataUrl) return;
     const existing = document.getElementById('pdf-cover');
@@ -250,17 +248,19 @@ window.onbeforeprint = () => {
 };
 window.onafterprint = () => document.getElementById('pdf-cover')?.remove();
 
+// ─── Cover text ───
 function updateCoverText() {
     document.getElementById('printProjectName').textContent = document.getElementById('projectName').value || 'Fire Door Inspection Report';
     document.getElementById('printSurveyorName').textContent = document.getElementById('surveyor').value || 'Surveyor Not Specified';
 }
-document.getElementById('projectName').oninput = updateCoverText;
-document.getElementById('surveyor').oninput = updateCoverText;
+document.getElementById('projectName').oninput = () => { updateCoverText(); schedulAutoSave(); };
+document.getElementById('surveyor').oninput   = () => { updateCoverText(); schedulAutoSave(); };
 
-// Rest of the app (door logic, save/load, etc.)
+// ─── App state ───
 const App = {
     doorNum: 1,
     container: document.getElementById('container'),
+
     updateSummary() {
         const pass = document.querySelectorAll('.status.pass').length;
         const fail = document.querySelectorAll('.status.fail').length;
@@ -268,17 +268,141 @@ const App = {
         document.getElementById('failCount').textContent = fail;
         document.getElementById('totalCount').textContent = pass + fail;
     },
+
+    // FIX: renumber uses visible+hidden rows correctly; doorNum driven solely from count
     renumberDoors() {
         document.querySelectorAll('.door-row').forEach((row, i) => {
-            const num = i + 1;
             const headerText = row.querySelector('.door-header span');
-            if (headerText) headerText.firstChild.textContent = `Door #${num}: `;
+            if (headerText) headerText.firstChild.textContent = `Door #${i + 1}: `;
         });
         App.doorNum = document.querySelectorAll('.door-row').length + 1;
         App.updateSummary();
     }
 };
 
+// ─── AUTO-SAVE (localStorage draft) ───
+// FIX: saves all door data automatically so a tab crash doesn't lose work.
+let autoSaveTimer = null;
+const AUTOSAVE_KEY = 'fireDoorrSurvey_draft';
+const indicator = document.getElementById('autosaveIndicator');
+
+function schedulAutoSave() {
+    indicator.textContent = 'Saving…';
+    indicator.className = 'saving';
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(performAutoSave, 1200);
+}
+
+function performAutoSave() {
+    try {
+        const draft = collectProjectData();
+        // Cover photo can be large; store separately to avoid exceeding quota
+        const draftWithoutPhoto = { ...draft, buildingPhoto: null };
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(draftWithoutPhoto));
+        indicator.textContent = '✓ Draft saved';
+        indicator.className = 'saved';
+    } catch (err) {
+        console.warn('Auto-save failed (storage full?):', err);
+        indicator.textContent = 'Save failed – storage full?';
+        indicator.className = '';
+    }
+}
+
+function loadAutoSave() {
+    try {
+        const raw = localStorage.getItem(AUTOSAVE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        if (!data || !data.doors || data.doors.length === 0) return false;
+        // Only restore if there's actually something useful
+        return data;
+    } catch { return false; }
+}
+
+function clearAutoSave() {
+    localStorage.removeItem(AUTOSAVE_KEY);
+}
+
+// ─── Collect all project data into a plain object ───
+function collectProjectData() {
+    const doorsData = Array.from(document.querySelectorAll('.door-row')).map(row => {
+        const photos = Array.from(row.querySelectorAll('.photo img')).map(img => img.src || null);
+        return {
+            id:       row.querySelector('.doorId').value,
+            location: row.querySelector('.location').value,
+            type:     row.querySelectorAll('select')[0].value,
+            rating:   row.querySelectorAll('select')[1].value,
+            issues:   row.querySelectorAll('textarea')[0].value,
+            action:   row.querySelectorAll('textarea')[1].value,
+            photos:   photos,
+            status:   row.querySelector('.status').textContent
+        };
+    });
+    return {
+        projectName:   document.getElementById('projectName').value,
+        surveyor:      document.getElementById('surveyor').value,
+        buildingPhoto: coverPhotoDataUrl || null,
+        doors:         doorsData
+    };
+}
+
+// ─── Restore project from a plain data object ───
+function restoreProject(data) {
+    document.getElementById('projectName').value = data.projectName || '';
+    document.getElementById('surveyor').value    = data.surveyor    || '';
+    updateCoverText();
+    if (data.buildingPhoto) {
+        coverPhotoDataUrl = data.buildingPhoto;
+        const img = document.getElementById('buildingPhoto');
+        img.src = data.buildingPhoto;
+        img.style.display = 'block';
+        document.querySelector('.cover-overlay').style.display = 'none';
+        document.getElementById('coverPlaceholder').style.display = 'none';
+    }
+    App.container.innerHTML = '';
+    App.doorNum = 1;
+    (data.doors || []).forEach(d => {
+        createDoor();
+        const row = App.container.lastElementChild;
+        row.querySelector('.doorId').value           = d.id       || '';
+        row.querySelector('.location').value         = d.location || '';
+        row.querySelectorAll('select')[0].value      = d.type     || 'Hollow Metal';
+        row.querySelectorAll('select')[1].value      = d.rating   || 'None';
+        row.querySelectorAll('textarea')[0].value    = d.issues   || '';
+        row.querySelectorAll('textarea')[1].value    = d.action   || '';
+        row.querySelector('.title').textContent      = d.id       || 'New Door';
+        const statusEl = row.querySelector('.status');
+        if (d.status === 'PASS') {
+            statusEl.classList.add('pass');
+            statusEl.classList.remove('fail');
+            statusEl.textContent = 'PASS';
+        }
+        // FIX: restore photos without destroying the file input element
+        (d.photos || []).forEach((src, i) => {
+            if (!src) return;
+            const photoDiv = row.querySelectorAll('.photo')[i];
+            if (!photoDiv) return;
+            setPhotoImage(photoDiv, src);
+        });
+    });
+    App.updateSummary();
+}
+
+// ─── Helper: set a photo image without removing the file input ───
+// FIX: this keeps the <input type=file> alive so user can replace photos after load
+function setPhotoImage(photoDiv, dataUrl) {
+    let img = photoDiv.querySelector('img');
+    if (!img) {
+        img = document.createElement('img');
+        photoDiv.appendChild(img);
+    }
+    img.src = dataUrl;
+    // Hide placeholder text
+    const lbl = photoDiv.querySelector('.photo-label');
+    if (lbl) lbl.style.display = 'none';
+}
+
+// ─── Create a door card ───
 function createDoor() {
     const row = document.createElement('div');
     row.className = 'door-row';
@@ -287,7 +411,7 @@ function createDoor() {
             <div class="door-header">
                 <span>Door #${App.doorNum}: <span class="title">New Door</span></span>
                 <div class="status fail" onclick="this.classList.toggle('pass');this.classList.toggle('fail');
-                     this.textContent=this.classList.contains('pass')?'PASS':'FAIL';App.updateSummary();">FAIL</div>
+                     this.textContent=this.classList.contains('pass')?'PASS':'FAIL';App.updateSummary();schedulAutoSave();">FAIL</div>
             </div>
             <div class="content">
                 <div>
@@ -303,8 +427,14 @@ function createDoor() {
                 <div>
                     <label>Photos</label>
                     <div class="photo-grid">
-                        <div class="photo"><span>Outside<br><small>Click to add</small></span><input type="file" accept="image/*"></div>
-                        <div class="photo"><span>Hardware<br><small>Click to add</small></span><input type="file" accept="image/*"></div>
+                        <div class="photo">
+                            <span class="photo-label">Outside<br><small>Click to add</small></span>
+                            <input type="file" accept="image/*">
+                        </div>
+                        <div class="photo">
+                            <span class="photo-label">Hardware<br><small>Click to add</small></span>
+                            <input type="file" accept="image/*">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -314,20 +444,28 @@ function createDoor() {
         </div>
     `;
 
+    // Update header title when Door ID is typed
     row.querySelector('.doorId').oninput = e => {
         row.querySelector('.title').textContent = e.target.value || 'New Door';
+        schedulAutoSave();
     };
 
-    row.querySelectorAll('.photo input').forEach(input => {
+    // Trigger auto-save on any text/select change within the door
+    row.querySelectorAll('input[type=text], select, textarea').forEach(el => {
+        el.addEventListener('input', schedulAutoSave);
+        el.addEventListener('change', schedulAutoSave);
+    });
+
+    // FIX: photo handler – compress image (prevents memory bloat / tab crash)
+    //      and uses setPhotoImage() to keep the file input alive
+    row.querySelectorAll('.photo input[type=file]').forEach(input => {
         input.onchange = async function () {
             const file = this.files[0];
             if (!file) return;
-            const dataUrl = await new Promise(r => {
-                const fr = new FileReader();
-                fr.onload = () => r(fr.result);
-                fr.readAsDataURL(file);
-            });
-            this.parentElement.innerHTML = `<img src="${dataUrl}">`;
+            // FIX: compress door photos just like cover photo to prevent memory bloat
+            const dataUrl = await compressAndRenderCover(file, 0.6, 1200);
+            setPhotoImage(this.closest('.photo'), dataUrl);
+            schedulAutoSave();
         };
     });
 
@@ -335,49 +473,40 @@ function createDoor() {
         e.stopPropagation();
         if (confirm('Delete this door permanently?')) {
             row.remove();
-            App.renumberDoors();
+            App.renumberDoors();  // FIX: renumberDoors also calls updateSummary
+            schedulAutoSave();
         }
     };
 
     App.container.appendChild(row);
+    // FIX: doorNum is now managed solely by renumberDoors; increment only here at creation
     App.doorNum++;
     App.updateSummary();
+    schedulAutoSave();
 }
 
-// BUTTONS
+// ─── BUTTONS ───
 document.getElementById('addBtn').onclick = createDoor;
-document.getElementById('printBtn').onclick = () => window.print();
-document.getElementById('exportPdfBtn').onclick = () => window.print();
+document.getElementById('printBtn').onclick   = () => window.print();
+// FIX: exportPdfBtn now opens the browser's Save as PDF dialog with a tip
+document.getElementById('exportPdfBtn').onclick = () => {
+    alert('In the print dialog, choose "Save as PDF" as the destination to export a PDF file.');
+    window.print();
+};
 
-// SAVE / LOAD
-document.getElementById('saveProject').onclick = async () => {
-    const doorsData = await Promise.all(Array.from(document.querySelectorAll('.door-row')).map(async row => {
-        const photos = Array.from(row.querySelectorAll('.photo img')).map(img => img.src);
-        return {
-            id: row.querySelector('.doorId').value,
-            location: row.querySelector('.location').value,
-            type: row.querySelectorAll('select')[0].value,
-            rating: row.querySelectorAll('select')[1].value,
-            issues: row.querySelectorAll('textarea')[0].value,
-            action: row.querySelectorAll('textarea')[1].value,
-            photos: photos,
-            status: row.querySelector('.status').textContent
-        };
-    }));
-
-    const data = {
-        projectName: document.getElementById('projectName').value,
-        surveyor: document.getElementById('surveyor').value,
-        buildingPhoto: coverPhotoDataUrl || null,
-        doors: doorsData
-    };
-
+// ─── SAVE (download JSON) ───
+document.getElementById('saveProject').onclick = () => {
+    const data = collectProjectData();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}));
     a.download = (data.projectName || 'FireDoorSurvey') + '.json';
     a.click();
+    clearAutoSave();
+    indicator.textContent = '✓ Project saved';
+    indicator.className = 'saved';
 };
 
+// ─── LOAD (from JSON file) ───
 document.getElementById('loadProjectBtn').onclick = () => document.getElementById('loadFile').click();
 document.getElementById('loadFile').onchange = e => {
     const file = e.target.files[0];
@@ -386,44 +515,17 @@ document.getElementById('loadFile').onchange = e => {
     reader.onload = ev => {
         try {
             const data = JSON.parse(ev.target.result);
-            document.getElementById('projectName').value = data.projectName || '';
-            document.getElementById('surveyor').value = data.surveyor || '';
-            updateCoverText();
-            if (data.buildingPhoto) {
-                coverPhotoDataUrl = data.buildingPhoto;
-                const img = document.getElementById('buildingPhoto');
-                img.src = data.buildingPhoto;
-                img.style.display = 'block';
-                document.querySelector('.cover-overlay').style.display = 'none';
-                document.getElementById('coverPlaceholder').style.display = 'none';
-            }
-            App.container.innerHTML = '';
-            App.doorNum = 1;
-            data.doors.forEach(d => {
-                createDoor();
-                const row = App.container.lastElementChild;
-                row.querySelector('.doorId').value = d.id || '';
-                row.querySelector('.location').value = d.location || '';
-                row.querySelectorAll('select')[0].value = d.type || 'Hollow Metal';
-                row.querySelectorAll('select')[1].value = d.rating || 'None';
-                row.querySelectorAll('textarea')[0].value = d.issues || '';
-                row.querySelectorAll('textarea')[1].value = d.action || '';
-                row.querySelector('.title').textContent = d.id || 'New Door';
-                const statusEl = row.querySelector('.status');
-                if (d.status === 'PASS') {
-                    statusEl.classList.add('pass'); statusEl.classList.remove('fail'); statusEl.textContent = 'PASS';
-                }
-                d.photos.forEach((src, i) => {
-                    if (src) row.querySelectorAll('.photo')[i].innerHTML = `<img src="${src}">`;
-                });
-            });
-            App.updateSummary();
+            restoreProject(data);
             alert('Project loaded successfully!');
-        } catch { alert('Invalid file'); }
+        } catch { alert('Invalid file – could not load project.'); }
     };
     reader.readAsText(file);
+    // Reset input so same file can be re-loaded if needed
+    e.target.value = '';
 };
 
+// ─── SEARCH ───
+// FIX: search only hides rows; renumberDoors is not called during search so numbers stay consistent
 document.getElementById('searchBar').oninput = e => {
     const term = e.target.value.toLowerCase();
     document.querySelectorAll('.door-row').forEach(row => {
@@ -431,9 +533,24 @@ document.getElementById('searchBar').oninput = e => {
     });
 };
 
-// START
-createDoor();
-updateCoverText();
+// ─── START: restore draft or create first door ───
+(function init() {
+    const draft = loadAutoSave();
+    if (draft && draft.doors && draft.doors.length > 0) {
+        const restore = confirm(`A draft with ${draft.doors.length} door(s) was found.\nRestore it?`);
+        if (restore) {
+            restoreProject(draft);
+            indicator.textContent = '✓ Draft restored';
+            indicator.className = 'saved';
+            updateCoverText();
+            return;
+        } else {
+            clearAutoSave();
+        }
+    }
+    createDoor();
+    updateCoverText();
+})();
 </script>
 </body>
 </html>
